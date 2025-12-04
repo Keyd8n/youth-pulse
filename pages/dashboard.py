@@ -3,11 +3,9 @@ import pandas as pd
 import plotly.express as px
 from utils.db import get_survey_by_id
 
-# --- CSS ДЛЯ СХОВУВАННЯ САЙДБАРУ ---
 st.set_page_config(page_title="Analytics Dashboard", page_icon="📈", layout="wide", initial_sidebar_state="collapsed")
 st.markdown("""<style>[data-testid="stSidebar"] {display: none;}</style>""", unsafe_allow_html=True)
 
-# --- ФУНКЦІЇ ---
 def extract_rating_number(series):
     return series.astype(str).apply(lambda x: int(x.split()[0]) if x.split()[0].isdigit() else 0)
 
@@ -69,7 +67,6 @@ def generate_detailed_text(df, question_type):
             else: text += "Значний відрив від конкурентів."
         return text
 
-# --- ГОЛОВНА ЛОГІКА ---
 if st.button("⬅️ Назад до стрічки"):
     st.switch_page("main.py")
 
@@ -92,7 +89,6 @@ for i, q in enumerate(current_survey.get('questions', [])):
     
     if not q_data: continue
 
-    # ПІДГОТОВКА ДАНИХ
     if q_type == 'text':
         if isinstance(q_data, dict) and "answers" in q_data:
             data_list = q_data["answers"]
@@ -127,14 +123,13 @@ for i, q in enumerate(current_survey.get('questions', [])):
                     df['Відповідь'] = df['Відповідь'].astype(str)
                     fig = px.bar(df, x='Відповідь', y='Кількість')
 
-                # ✅ ВИПРАВЛЕННЯ: Додано унікальний ключ (key=f"chart_{i}")
                 if fig:
                     fig.update_layout(margin=dict(t=30, b=0, l=0, r=0), height=350)
                     st.plotly_chart(fig, use_container_width=True, key=f"chart_{i}")
 
         with col_info:
             insight, status, val, pct = generate_insight(df, q_type)
-            st.markdown("#####Аналітика")
+            st.markdown("Аналітика")
             if status == "success": st.success(insight)
             elif status == "warning": st.warning(insight)
             elif status == "error": st.error(insight)
@@ -152,4 +147,4 @@ for i, q in enumerate(current_survey.get('questions', [])):
                 st.caption("Кількісні метрики недоступні")
 
         st.divider()
-        st.write(f"**Висновок:** {generate_detailed_text(df, q_type)}")
+        st.write(f"Висновок: {generate_detailed_text(df, q_type)}")

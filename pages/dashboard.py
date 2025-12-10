@@ -1,150 +1,167 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from utils.db import get_survey_by_id
+import textwrap
+from utils.db import get_survey_by_id, save_ai_result
+from utils.ai_helper import get_ai_analysis, analyze_whole_survey
 
-st.set_page_config(page_title="Analytics Dashboard", page_icon="📈", layout="wide", initial_sidebar_state="collapsed")
+# --- НАЛАШТУВАННЯ ---
+st.set_page_config(page_title="Dashboard", layout="wide", initial_sidebar_state="collapsed")
 st.markdown("""<style>[data-testid="stSidebar"] {display: none;}</style>""", unsafe_allow_html=True)
 
+# --- ДОПОМІЖНІ ФУНКЦІЇ ---
 def extract_rating_number(series):
     return series.astype(str).apply(lambda x: int(x.split()[0]) if x.split()[0].isdigit() else 0)
 
-def generate_insight(df, question_type):
-    if question_type == 'text':
-        return f"Зібрано {len(df)} текстових відповідей.", "info", str(len(df)), 0
-        
-    if df.empty: return "Немає даних", "error", "-", 0
-    
-    winner = df.sort_values(by='Кількість', ascending=False).iloc[0]
-    total = df['Кількість'].sum()
-    if total == 0: return "Немає даних", "error", "-", 0
-    
-    percent = (winner['Кількість'] / total) * 100
-    insight_text, status = "", "info"
-    
-    if question_type == 'rating':
-        try:
-            vals = extract_rating_number(df['Відповідь'])
-            avg_score = (vals * df['Кількість']).sum() / total
-            insight_text = f"Середня оцінка: **{avg_score:.1f} / 5.0**"
-            if avg_score < 3: status = "error"
-            elif avg_score >= 4: status = "success"
-            return insight_text, status, f"{avg_score:.1f}", avg_score * 20 
-        except:
-            return "Помилка розрахунку", "warning", "N/A", 0
-    else:
-        if percent > 50:
-            insight_text = f"Абсолютний лідер: **{winner['Відповідь']}**"
-            status = "success"
-        else:
-            insight_text = f"Лідирує **{winner['Відповідь']}**"
-            if percent < 30: status = "warning"
-        return insight_text, status, winner['Відповідь'], percent
+def shorten_label(text, width=40):
+    return textwrap.shorten(str(text), width=width, placeholder="...")
 
-def generate_detailed_text(df, question_type):
-    if question_type == 'text':
-        return "Це відкрите питання. Рекомендується ручний аналіз наведених вище відповідей для формування якісних висновків."
-    
-    total = df['Кількість'].sum()
+def generate_insight(df, question_type):
+    if df.empty: return "Немає даних", "error", "-", 0
+    if question_type == 'text': return f"Отримано {len(df)} відповідей.", "info", str(len(df)), 0
+    if question_type == 'matrix': return "Матричне питання.", "info", "Matrix", 0
+
     sorted_df = df.sort_values(by='Кількість', ascending=False)
     winner = sorted_df.iloc[0]
+    total = df['Кількість'].sum()
+    if total == 0: return "Err", "error", "-", 0
+    
+    percent = (winner['Кількість'] / total) * 100
     
     if question_type == 'rating':
         try:
             vals = extract_rating_number(df['Відповідь'])
             avg = (vals * df['Кількість']).sum() / total
-            text = f"Середній індекс: **{avg:.1f} з 5**. "
-            if avg < 3: text += "Низький показник, є проблеми."
-            elif avg > 4.2: text += "Висока оцінка аудиторії."
-            else: text += "Стабільний середній результат."
-            return text
-        except: return "Дані рейтингу не розпізнано."
-    else:
-        text = f"Лідер: **«{winner['Відповідь']}»** ({winner['Кількість']} голосів). "
-        if len(df) > 1:
-            gap = winner['Кількість'] - sorted_df.iloc[1]['Кількість']
-            if gap < total * 0.05: text += "Конкуренція дуже висока."
-            else: text += "Значний відрив від конкурентів."
-        return text
+            status = "success" if avg >= 4 else "warning"
+            return f"Середня: **{avg:.1f}**", status, f"{avg:.1f}", avg*20
+        except: return "Помилка", "warning", "-", 0
+        
+    return f"Лідер: **{winner['Відповідь'][:20]}...**", "success", str(winner['Кількість']), percent
+
+# --- ГОЛОВНА ЛОГІКА ---
 
 if st.button("⬅️ Назад до стрічки"):
     st.switch_page("main.py")
 
-survey_id = st.session_state.get("selected_survey_id", None)
+survey_id = st.session_state.get("selected_survey_id")
 if not survey_id: st.stop()
+survey = get_survey_by_id(survey_id)
 
-current_survey = get_survey_by_id(survey_id)
-if not current_survey: st.error("Опитування не знайдено"); st.stop()
+st.title(survey.get('title'))
+st.caption(survey.get('description'))
 
-st.title(f"{current_survey.get('title', 'Без назви')}")
-c1, c2 = st.columns([3, 1])
-c1.markdown(f"**Організація:** {current_survey.get('organization', 'Unknown')}")
-c2.metric("Учасників", f"{current_survey.get('participants', 0)}")
+# === БЛОК ПАКЕТНОГО АНАЛІЗУ (BATCH) ===
+# Перевіряємо, чи є хоча б одне питання без аналізу
+questions = survey.get('questions', [])
+missing_analysis = any(not q.get('ai_analysis') for q in questions)
+
+if missing_analysis:
+    with st.container(border=True):
+        c_text, c_btn = st.columns([3, 1])
+        c_text.info("💡 Ви можете згенерувати висновки для всього опитування одним кліком (Batch Processing).")
+        if c_btn.button("⚡ Проаналізувати ВСЕ", type="primary", width='stretch'):
+            with st.spinner("Gemini аналізує все опитування (1 запит)..."):
+                batch_results = analyze_whole_survey(survey.get('title'), questions)
+                
+                if batch_results:
+                    bar = st.progress(0)
+                    for idx, text in batch_results.items():
+                        # idx вже є число, тому не потрібно конвертувати
+                        save_ai_result(survey.get('id'), idx, text)
+                        bar.progress((idx + 1) / len(batch_results))
+                    st.success("Готово!")
+                    st.rerun()
+                else:
+                    st.error("Помилка генерації.")
+
 st.divider()
 
-for i, q in enumerate(current_survey.get('questions', [])):
-    q_text = q.get('text', '')
+# === ЦИКЛ ПО ПИТАННЯХ ===
+for i, q in enumerate(questions):
+    q_text = q.get('text', 'Питання')
     q_type = q.get('type', 'single_choice')
     q_data = q.get('data', {})
     
     if not q_data: continue
 
+    # DataFrame підготовка
     if q_type == 'text':
-        if isinstance(q_data, dict) and "answers" in q_data:
-            data_list = q_data["answers"]
-        elif isinstance(q_data, list):
-            data_list = q_data
-        else:
-            data_list = list(q_data.keys())
-        df = pd.DataFrame(data_list, columns=['Текстові відповіді'])
+        data_list = q_data.get("answers", []) if isinstance(q_data, dict) else []
+        df = pd.DataFrame(data_list, columns=['Text'])
+    elif q_type == 'matrix':
+        df = pd.DataFrame() 
     else:
         df = pd.DataFrame(list(q_data.items()), columns=['Відповідь', 'Кількість'])
+        df['Label'] = df['Відповідь'].apply(lambda x: shorten_label(x, 50))
 
     with st.container(border=True):
         st.subheader(f"{i+1}. {q_text}")
         
-        col_viz, col_info = st.columns([2, 1])
+        if q_type == 'matrix': col_viz = st.container(); col_info = None
+        else: col_viz, col_info = st.columns([2, 1])
         
+        # ВІЗУАЛІЗАЦІЯ
         with col_viz:
             if q_type == 'text':
-                st.dataframe(df, use_container_width=True, height=300, hide_index=True)
-            else:
-                fig = None
-                if q_type == 'single_choice':
-                    fig = px.pie(df, values='Кількість', names='Відповідь', hole=0.5)
-                elif q_type == 'multiple_choice':
-                    df = df.sort_values(by='Кількість', ascending=True)
-                    fig = px.bar(df, x='Кількість', y='Відповідь', orientation='h')
-                elif q_type == 'rating':
-                    try:
-                        df['sort'] = extract_rating_number(df['Відповідь'])
-                        df = df.sort_values('sort')
-                    except: pass
-                    df['Відповідь'] = df['Відповідь'].astype(str)
-                    fig = px.bar(df, x='Відповідь', y='Кількість')
+                st.markdown("##### 💬 Відгуки")
+                if not df.empty:
+                    with st.container(height=300):
+                        for txt in df['Text']:
+                            if len(str(txt)) > 1:
+                                with st.container(border=True): st.write(txt)
+                else: st.caption("Пусто.")
 
-                if fig:
-                    fig.update_layout(margin=dict(t=30, b=0, l=0, r=0), height=350)
-                    st.plotly_chart(fig, use_container_width=True, key=f"chart_{i}")
+            elif q_type == 'matrix':
+                matrix_rows = []
+                for sub_q, sub_votes in q_data.items():
+                    tot = sum(sub_votes.values())
+                    for ans, cnt in sub_votes.items():
+                        pct = (cnt / tot * 100) if tot > 0 else 0
+                        matrix_rows.append({"Питання": sub_q, "Відповідь": ans, "Кількість": cnt, "Відсоток": pct})
+                df_m = pd.DataFrame(matrix_rows)
+                if not df_m.empty:
+                    fig = px.bar(df_m, x="Відсоток", y="Питання", color="Відповідь", orientation='h', text_auto='.0f')
+                    fig.update_layout(height=300 + (len(q_data)*30))
+                    st.plotly_chart(fig, width='stretch', key=f"chart_matrix_{i}")
 
-        with col_info:
-            insight, status, val, pct = generate_insight(df, q_type)
-            st.markdown("Аналітика")
-            if status == "success": st.success(insight)
-            elif status == "warning": st.warning(insight)
-            elif status == "error": st.error(insight)
-            else: st.info(insight)
-            
-            st.markdown("---")
-            if q_type != 'text':
-                if q_type == 'rating':
-                    st.metric("Середній бал", val)
-                    st.progress(int(float(pct)))
-                else:
-                    st.metric("Лідер", val)
-                    st.metric("Підтримка", f"{pct:.1f}%")
-            else:
-                st.caption("Кількісні метрики недоступні")
+            elif q_type == 'multiple_choice':
+                df = df.sort_values('Кількість')
+                fig = px.bar(df, x='Кількість', y='Label', orientation='h', text='Кількість')
+                fig.update_layout(showlegend=False)
+                st.plotly_chart(fig, width='stretch', key=f"chart_multi_{i}")
 
+            elif q_type in ['single_choice', 'rating']:
+                fig = px.pie(df, values='Кількість', names='Label', hole=0.4) if q_type == 'single_choice' \
+                 else px.bar(df, x='Label', y='Кількість', color='Кількість')
+                st.plotly_chart(fig, width='stretch', key=f"chart_q{i}")
+
+        # СТАТИСТИКА
+        if col_info:
+            with col_info:
+                txt, status, val, pct = generate_insight(df, q_type)
+                st.markdown("##### Статистика")
+                if status == 'success': st.success(txt)
+                elif status == 'warning': st.warning(txt)
+                else: st.info(txt)
+                if q_type != 'text':
+                    st.metric("Показник", val)
+                    if q_type != 'rating': st.progress(min(int(pct), 100))
+
+        # AI ВИСНОВОК (Збережений або Кнопка)
         st.divider()
-        st.write(f"Висновок: {generate_detailed_text(df, q_type)}")
+        existing_ai = q.get('ai_analysis')
+        
+        if existing_ai:
+            st.markdown("##### 🤖 Висновок AI:")
+            st.info(existing_ai, icon="💡")
+        else:
+            if st.button(f"✨ Аналізувати питання", key=f"btn_{i}"):
+                with st.spinner("Аналіз..."):
+                    # Підготовка даних для поодинокого запиту
+                    if q_type == 'text': d = df['Text'].tolist(); dt = 'text'
+                    elif q_type == 'matrix': d = str(q_data); dt = 'matrix'
+                    else: d = dict(zip(df['Відповідь'], df['Кількість'])); dt = q_type
+                    
+                    res = get_ai_analysis(q_text, d, dt)
+                    save_ai_result(survey.get('id'), i, res)
+                    st.rerun()

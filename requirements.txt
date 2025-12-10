@@ -4,3 +4,6 @@ plotly
 pymongo
 dnspython
 certifi
+matplotlib
+wordcloud
+google-generativeai

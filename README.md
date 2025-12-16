@@ -101,13 +101,13 @@ pip install -r requirements.txt
 ```
 [mongo]
 uri = "mongodb://localhost:27017"
-db_name = "youth_pulse_db"
+db_name = "your_db_name"
 
-[google]
-api_key = "YOUR_GEMINI_API_KEY"
+[gemini]
+GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"
 
-[auth]
-admin_password = "secure_password"
+[general]
+admin_password = "your_password"
 ```
 **5. Запустіть додаток:**
 ```

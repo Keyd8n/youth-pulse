@@ -3,10 +3,21 @@ import pandas as pd
 import re
 from utils.db import get_db
 from utils.ai_helper import generate_survey_description
+from utils.auth import check_password
 
 st.set_page_config(page_title="Адмін-панель", page_icon="🛠")
+# === БЛОК БЕЗПЕКИ ===
+if not check_password():
+    st.stop()
+# ===================
+# Приховуємо меню та бічну панель
+st.markdown("""
+<style>
+    [data-testid="stSidebar"] {display: none;}
+    [data-testid="stMainMenuButton"] {display: none;}
+</style>
+""", unsafe_allow_html=True)
 
-# ФУНКЦІЇ ОЧИЩЕННЯ ДАНИХ
 def normalize_text(text):
     # Видаляє пусті значення
     if pd.isna(text): return None
@@ -88,26 +99,48 @@ def format_data_for_type(series, selected_type):
 
 st.title("🛠 Імпорт та Налаштування")
 
-# Кнопка повернення на головну
-if st.button("⬅️ На головну", width='content'):
-    st.switch_page("main.py")
+# Кнопки навігації
+nav_col1, nav_col2, nav_col3 = st.columns([8, 1, 1])
+with nav_col2:
+    if st.button("✏️ Редактор", width='stretch', key='to_editor'):
+        st.switch_page("pages/editor.py")
+with nav_col3:
+    if st.button("⬅️ На головну", width='stretch', key='to_home'):
+        st.switch_page("main.py")
+
+st.divider()
 
 # Ініціалізація стану опитування (якщо його немає)
 if 'stage' not in st.session_state: st.session_state.stage = 0
 if 'df_clean' not in st.session_state: st.session_state.df_clean = None
 if 'survey_meta' not in st.session_state: st.session_state.survey_meta = {}
 
-# Завантаження CSV файлу
-uploaded_file = st.file_uploader("1. Оберіть CSV файл", type=["csv"])
+# Завантаження файлу (CSV або Excel)
+uploaded_file = st.file_uploader("1. Оберіть файл (CSV або Excel)", type=["csv", "xlsx", "xls"])
 
 if uploaded_file is not None:
     # ПАРАМЕТРИ ОПИТУВАННЯ
     if st.session_state.stage == 0:
-        df = pd.read_csv(uploaded_file)
+        try:
+            # Визначаємо формат файлу та читаємо відповідним методом
+            if uploaded_file.name.endswith('.csv'):
+                df = pd.read_csv(uploaded_file)
+            else:
+                # Читаємо Excel (за замовчуванням перший аркуш)
+                df = pd.read_excel(uploaded_file)
+        except Exception as e:
+            st.error(f"Помилка при зчитуванні файлу: {e}")
+            st.stop()
         
         with st.form("settings_form"):
             st.subheader("2. Основні параметри")
-            title = st.text_input("Назва", value=uploaded_file.name.replace(".csv", ""))
+            
+            # Очищуємо назву від розширення для поля вводу
+            clean_filename = uploaded_file.name
+            for ext in [".csv", ".xlsx", ".xls"]:
+                clean_filename = clean_filename.replace(ext, "")
+                
+            title = st.text_input("Назва", value=clean_filename)
             org = st.text_input("Організація", "IT Kamianets")
             
             # Видалення ненужних колонок (timestamp, email, ПІБ тощо)
@@ -157,8 +190,11 @@ if uploaded_file is not None:
                 with c1:
                     st.write(f"**{col}**")
                     # Показуємо приклад першої відповіді
-                    example = str(st.session_state.df_clean[col].dropna().iloc[0])[:60]
-                    st.caption(f"Приклад: {example}...")
+                    try:
+                        example = str(st.session_state.df_clean[col].dropna().iloc[0])[:60]
+                        st.caption(f"Приклад: {example}...")
+                    except IndexError:
+                        st.caption("Немає даних")
                 with c2:
                     default = st.session_state.suggested_types.get(col, "single_choice")
                     user_selected_types[col] = st.selectbox(

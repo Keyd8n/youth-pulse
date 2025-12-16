@@ -1,20 +1,41 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import textwrap
 from utils.db import get_survey_by_id, save_ai_result
 from utils.ai_helper import get_ai_analysis, analyze_whole_survey
+import textwrap
 
-# --- НАЛАШТУВАННЯ ---
+# --- НАЛАШТУВАННЯ СТОРІНКИ ---
 st.set_page_config(page_title="Dashboard", layout="wide", initial_sidebar_state="collapsed")
-st.markdown("""<style>[data-testid="stSidebar"] {display: none;}</style>""", unsafe_allow_html=True)
+st.markdown("""
+<style>
+    [data-testid="stSidebar"] {display: none;}
+    [data-testid="stMainMenuButton"] {display: none;}
+    h2 {word-wrap: break-word; overflow-wrap: break-word; word-break: break-word;}
+</style>
+""", unsafe_allow_html=True)
 
 # --- ДОПОМІЖНІ ФУНКЦІЇ ---
+
 def extract_rating_number(series):
     return series.astype(str).apply(lambda x: int(x.split()[0]) if x.split()[0].isdigit() else 0)
 
-def shorten_label(text, width=40):
-    return textwrap.shorten(str(text), width=width, placeholder="...")
+def smart_wrap(text, width=30):
+    """
+    Розбиває текст. Ширина 30 - оптимально для мобільних, щоб текст не був занадто широким.
+    """
+    if pd.isna(text): return ""
+    text = str(text)
+    if len(text) > 120: text = text[:117] + "..."
+    return "<br>".join(textwrap.wrap(text, width=width))
+
+def calculate_chart_height(df, base_height=350, row_height=45):
+    """
+    Розрахунок висоти. row_height=45 дає достатньо місця для тексту у 3-4 рядки.
+    """
+    if df.empty: return base_height
+    dynamic_height = base_height + (len(df) * row_height)
+    return dynamic_height
 
 def generate_insight(df, question_type):
     if df.empty: return "Немає даних", "error", "-", 0
@@ -38,6 +59,14 @@ def generate_insight(df, question_type):
         
     return f"Лідер: **{winner['Відповідь'][:20]}...**", "success", str(winner['Кількість']), percent
 
+# --- КОНФІГУРАЦІЯ ДЛЯ PLOTLY (Вимикає інтерактивність мобільного) ---
+PLOTLY_CONFIG = {
+    'displayModeBar': False, # Ховає панель інструментів
+    'scrollZoom': False,     # Вимикає зум колесом/пальцями
+    'showAxisDragHandles': False,
+    'staticPlot': False      # False = тултіпи працюють
+}
+
 # --- ГОЛОВНА ЛОГІКА ---
 
 if st.button("⬅️ Назад до стрічки"):
@@ -48,25 +77,22 @@ if not survey_id: st.stop()
 survey = get_survey_by_id(survey_id)
 
 st.title(survey.get('title'))
-st.caption(survey.get('description'))
 
-# === БЛОК ПАКЕТНОГО АНАЛІЗУ (BATCH) ===
-# Перевіряємо, чи є хоча б одне питання без аналізу
+# === BATCH ANALYZE ===
 questions = survey.get('questions', [])
 missing_analysis = any(not q.get('ai_analysis') for q in questions)
 
 if missing_analysis:
     with st.container(border=True):
         c_text, c_btn = st.columns([3, 1])
-        c_text.info("💡 Ви можете згенерувати висновки для всього опитування одним кліком (Batch Processing).")
-        if c_btn.button("⚡ Проаналізувати ВСЕ", type="primary", width='stretch'):
-            with st.spinner("Gemini аналізує все опитування (1 запит)..."):
+        c_text.info("💡 Ви можете згенерувати висновки для всього опитування одним кліком.")
+        if c_btn.button("⚡ Проаналізувати ВСЕ", type="primary", use_container_width=True):
+            with st.spinner("Gemini аналізує все опитування..."):
                 batch_results = analyze_whole_survey(survey.get('title'), questions)
-                
                 if batch_results:
                     bar = st.progress(0)
-                    for idx, text in batch_results.items():
-                        # idx вже є число, тому не потрібно конвертувати
+                    for q_idx_str, text in batch_results.items():
+                        idx = int(q_idx_str)
                         save_ai_result(survey.get('id'), idx, text)
                         bar.progress((idx + 1) / len(batch_results))
                     st.success("Готово!")
@@ -84,7 +110,7 @@ for i, q in enumerate(questions):
     
     if not q_data: continue
 
-    # DataFrame підготовка
+    # Підготовка даних
     if q_type == 'text':
         data_list = q_data.get("answers", []) if isinstance(q_data, dict) else []
         df = pd.DataFrame(data_list, columns=['Text'])
@@ -92,16 +118,16 @@ for i, q in enumerate(questions):
         df = pd.DataFrame() 
     else:
         df = pd.DataFrame(list(q_data.items()), columns=['Відповідь', 'Кількість'])
-        df['Label'] = df['Відповідь'].apply(lambda x: shorten_label(x, 50))
+        # Обертаємо текст (ширина 30 символів)
+        df['Label'] = df['Відповідь'].apply(lambda x: smart_wrap(x, 30))
 
     with st.container(border=True):
         st.subheader(f"{i+1}. {q_text}")
         
-        if q_type == 'matrix': col_viz = st.container(); col_info = None
-        else: col_viz, col_info = st.columns([2, 1])
+        col_viz = st.container()
         
-        # ВІЗУАЛІЗАЦІЯ
         with col_viz:
+            # 1. ТЕКСТ (Відгуки)
             if q_type == 'text':
                 st.markdown("##### 💬 Відгуки")
                 if not df.empty:
@@ -111,43 +137,99 @@ for i, q in enumerate(questions):
                                 with st.container(border=True): st.write(txt)
                 else: st.caption("Пусто.")
 
+            # 2. МАТРИЦЯ
             elif q_type == 'matrix':
                 matrix_rows = []
                 for sub_q, sub_votes in q_data.items():
                     tot = sum(sub_votes.values())
                     for ans, cnt in sub_votes.items():
                         pct = (cnt / tot * 100) if tot > 0 else 0
-                        matrix_rows.append({"Питання": sub_q, "Відповідь": ans, "Кількість": cnt, "Відсоток": pct})
+                        matrix_rows.append({
+                            "Питання": smart_wrap(sub_q, 25), # Для матриць текст ще вужчий
+                            "Відповідь": ans, 
+                            "Кількість": cnt, 
+                            "Відсоток": pct
+                        })
                 df_m = pd.DataFrame(matrix_rows)
                 if not df_m.empty:
-                    fig = px.bar(df_m, x="Відсоток", y="Питання", color="Відповідь", orientation='h', text_auto='.0f')
-                    fig.update_layout(height=300 + (len(q_data)*30))
-                    st.plotly_chart(fig, width='stretch', key=f"chart_matrix_{i}")
+                    # Розрахунок висоти (трохи більший row_height для матриць)
+                    h = calculate_chart_height(df_m, base_height=400, row_height=50)
+                    
+                    fig = px.bar(df_m, x="Відсоток", y="Питання", color="Відповідь", 
+                                 orientation='h', text_auto='.0f')
+                    
+                    # --- ВИПРАВЛЕННЯ ДЛЯ МАТРИЦЬ ---
+                    fig.update_layout(
+                        height=h,
+                        legend=dict(orientation="h", y=-0.2, x=0),
+                        margin=dict(t=20, b=50), # Прибрано жорсткі l=20, r=0
+                        xaxis_fixedrange=True,
+                        yaxis_fixedrange=True,
+                        # automargin розрахує ширину для тексту, title=None економить місце
+                        yaxis=dict(automargin=True, title=None), 
+                        xaxis=dict(title=None),
+                        dragmode=False
+                    )
+                    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG, key=f"chart_matrix_{i}")
 
+            # 3. МНОЖИННИЙ ВИБІР (Horizontal Bar)
             elif q_type == 'multiple_choice':
                 df = df.sort_values('Кількість')
+                h = calculate_chart_height(df, base_height=350, row_height=45)
+                
                 fig = px.bar(df, x='Кількість', y='Label', orientation='h', text='Кількість')
-                fig.update_layout(showlegend=False)
-                st.plotly_chart(fig, width='stretch', key=f"chart_multi_{i}")
+                
+                # --- ВИПРАВЛЕННЯ ДЛЯ МНОЖИННОГО ВИБОРУ (ВАША ПРОБЛЕМА) ---
+                fig.update_layout(
+                    showlegend=False,
+                    height=h,
+                    margin=dict(t=30, b=20), # Прибрано жорсткі l=20
+                    xaxis_fixedrange=True,
+                    yaxis_fixedrange=True,
+                    # automargin автоматично посуне графік вправо
+                    yaxis=dict(automargin=True, title=None),
+                    xaxis=dict(title=None), 
+                    dragmode=False
+                )
+                st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG, key=f"chart_multiple_{i}")
 
+            # 4. ОДИНАРНИЙ (Pie) / РЕЙТИНГ (Bar)
             elif q_type in ['single_choice', 'rating']:
-                fig = px.pie(df, values='Кількість', names='Label', hole=0.4) if q_type == 'single_choice' \
-                 else px.bar(df, x='Label', y='Кількість', color='Кількість')
-                st.plotly_chart(fig, width='stretch', key=f"chart_q{i}")
+                if q_type == 'single_choice':
+                    fig = px.pie(df, values='Кількість', names='Label', hole=0.4)
+                    fig.update_layout(
+                        legend=dict(orientation="h", y=-0.2, x=0), 
+                        height=450,
+                        margin=dict(l=10, r=10, t=30, b=80),
+                        dragmode=False
+                    )
+                    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG, key=f"chart_single_{i}")
+                else:
+                    fig = px.bar(df, x='Label', y='Кількість', color='Кількість')
+                    fig.update_layout(
+                        showlegend=False,
+                        height=400,
+                        margin=dict(l=20, r=0, t=20, b=80),
+                        xaxis_fixedrange=True,
+                        yaxis_fixedrange=True,
+                        xaxis=dict(tickangle=-45, automargin=True, title=None), # Також додав automargin
+                        yaxis=dict(title=None),
+                        dragmode=False
+                    )
+                    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG, key=f"chart_rating_{i}")
 
         # СТАТИСТИКА
-        if col_info:
-            with col_info:
-                txt, status, val, pct = generate_insight(df, q_type)
-                st.markdown("##### Статистика")
-                if status == 'success': st.success(txt)
-                elif status == 'warning': st.warning(txt)
-                else: st.info(txt)
-                if q_type != 'text':
-                    st.metric("Показник", val)
-                    if q_type != 'rating': st.progress(min(int(pct), 100))
+        st.divider()
+        txt, status, val, pct = generate_insight(df, q_type)
+        c_s1, c_s2 = st.columns([3, 1])
+        with c_s1:
+            if status == 'success': st.success(txt)
+            elif status == 'warning': st.warning(txt)
+            else: st.info(txt)
+        with c_s2:
+            if q_type != 'text': st.metric("Кількість відповідей", val)
 
-        # AI ВИСНОВОК (Збережений або Кнопка)
+        # AI
         st.divider()
         existing_ai = q.get('ai_analysis')
         
@@ -157,7 +239,6 @@ for i, q in enumerate(questions):
         else:
             if st.button(f"✨ Аналізувати питання", key=f"btn_{i}"):
                 with st.spinner("Аналіз..."):
-                    # Підготовка даних для поодинокого запиту
                     if q_type == 'text': d = df['Text'].tolist(); dt = 'text'
                     elif q_type == 'matrix': d = str(q_data); dt = 'matrix'
                     else: d = dict(zip(df['Відповідь'], df['Кількість'])); dt = q_type

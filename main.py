@@ -12,10 +12,11 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Приховуємо бічну панель (сайдбар)
+# Приховуємо бічну панель (сайдбар) та меню
 st.markdown("""
 <style>
     [data-testid="stSidebar"] {display: none;}
+    [data-testid="stMainMenuButton"] {display: none;}
 </style>
 """, unsafe_allow_html=True)
 

@@ -8,7 +8,7 @@
 ![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)
 ![MongoDB](https://img.shields.io/badge/MongoDB-47A248?style=for-the-badge&logo=mongodb&logoColor=white)
 ![Gemini AI](https://img.shields.io/badge/Google%20Gemini-8E75B2?style=for-the-badge&logo=google&logoColor=white)
-
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 </div>
 
 ---
@@ -159,7 +159,7 @@ streamlit run main.py
 
 ## 📝 Ліцензія
 
-Цей проєкт розповсюджується під ліцензією **MIT**. Див. файл `LICENSE` для деталей.
+Цей проєкт розповсюджується під ліцензією [MIT](LICENSE). Див. файл [LICENSE](LICENSE) для деталей.
 
 <div align="center">
 

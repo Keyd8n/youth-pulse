@@ -52,16 +52,16 @@
 
 ## 🏗 Архітектура проєкту
 ```text
-YouthPulse/
-├── main.py            # Головна сторінка (Стрічка доступних опитувань)
-├── dashboard.py       # Аналітичне ядро (Графіки + AI-висновки)
-├── admin.py           # Модуль адміністратора (Імпорт та налаштування)
-├── editor.py          # Редактор метаданих опитувань
-├── utils/             # Допоміжні модулі
-│   ├── db.py          # Драйвер підключення до MongoDB
-│   ├── ai_helper.py   # Інтеграція з Google Gemini API
-│   └── auth.py        # Логіка авторизації користувачів
-└── requirements.txt   # Залежності проєкту
+📂 YouthPulse/
+├── 📄 main.py            # Головна сторінка (Стрічка доступних опитувань)
+├── 📄 dashboard.py       # Аналітичне ядро (Графіки + AI-висновки)
+├── 📄 admin.py           # Модуль адміністратора (Імпорт та налаштування)
+├── 📄 editor.py          # Редактор метаданих опитувань
+├── 📂 utils/             # Допоміжні модулі
+│   ├── 🐍 db.py          # Драйвер підключення до MongoDB
+│   ├── 🤖 ai_helper.py   # Інтеграція з Google Gemini API
+│   └── 🔐 auth.py        # Логіка авторизації користувачів
+└── 📄 requirements.txt   # Залежності проєкту
 ```
 ---
 
@@ -76,10 +76,12 @@ YouthPulse/
 ### Інструкція з встановлення
 
 **1. Клонуйте репозиторій:**
+```
 git clone https://github.com/Keyd8n/youth-pulse.git
 cd youth-pulse
-
+```
 **2. Створіть віртуальне середовище:**
+```
 python -m venv venv
 
 *Для Windows:*
@@ -87,13 +89,14 @@ venv\Scripts\activate
 
 *Для macOS/Linux:*
 source venv/bin/activate
-
+```
 **3. Встановіть залежності:**
+```
 pip install -r requirements.txt
-
+```
 **4. Налаштуйте змінні оточення:**
 Створіть папку `.streamlit` у корені проєкту, а в ній файл `secrets.toml`. Додайте туди свої ключі:
-
+```
 [mongo]
 uri = "mongodb://localhost:27017"
 db_name = "youth_pulse_db"
@@ -103,10 +106,11 @@ api_key = "YOUR_GEMINI_API_KEY"
 
 [auth]
 admin_password = "secure_password"
-
+```
 **5. Запустіть додаток:**
+```
 streamlit run main.py
-
+```
 ---
 
 ## 🛠 Технологічний стек

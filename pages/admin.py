@@ -22,7 +22,6 @@ def clean_question_text(text):
     """Видаляє нумерацію на початку (наприклад '1. ', '2) ', '1 - ')"""
     if pd.isna(text): return "Без назви"
     text = str(text).strip()
-    # Regex: початок рядка, цифри, потім крапка/дужка/тире і пробіли
     return re.sub(r'^\d+[\.\)\-\s]+\s*', '', text)
 
 def normalize_text(text):
@@ -104,8 +103,7 @@ if uploaded_file is not None:
                 df = pd.read_csv(uploaded_file)
             else:
                 df = pd.read_excel(uploaded_file)
-            
-            # === АВТОМАТИЧНЕ ОЧИЩЕННЯ НАЗВ КОЛОНОК ВІД ЦИФР ===
+
             df.columns = [clean_question_text(col) for col in df.columns]
             
         except Exception as e:
@@ -150,9 +148,9 @@ if uploaded_file is not None:
             user_selected_types = {}
             type_options = ["single_choice", "multiple_choice", "text", "rating"]
             type_labels = {
-                "single_choice": "Один вибір (Pie Chart)",
-                "multiple_choice": "☑️ Множинний вибір (Bar Chart)",
-                "text": "Текст / Розгорнуті відповіді",
+                "single_choice": "🥧 Один вибір (Pie Chart)",
+                "multiple_choice": "📶 Множинний вибір (Bar Chart)",
+                "text": "💬 Текст / Розгорнуті відповіді",
                 "rating": "⭐ Рейтинг (1-5)"
             }
 

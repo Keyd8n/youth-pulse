@@ -3,7 +3,6 @@ from google import genai
 import streamlit as st
 
 def get_client():
-    """Створює клієнта з API ключем з секретів"""
     api_key = None
     if "gemini" in st.secrets and "GEMINI_API_KEY" in st.secrets["gemini"]:
         api_key = st.secrets["gemini"]["GEMINI_API_KEY"]
@@ -14,7 +13,6 @@ def get_client():
     return genai.Client(api_key=api_key)
 
 def get_ai_analysis(question_text, data, data_type="stats"):
-    """Аналіз ОДНОГО питання (для кнопки під карткою)"""
     try:
         client = get_client()
         if not client: return "⚠️ Не знайдено API ключа."
@@ -36,21 +34,16 @@ def get_ai_analysis(question_text, data, data_type="stats"):
         return f"Помилка AI: {e}"
 
 def analyze_whole_survey(survey_title, questions_list):
-    """
-    ПАКЕТНИЙ АНАЛІЗ: Відправляє все опитування одним запитом.
-    Повертає словник {індекс_питання: текст_аналізу}.
-    """
+
     try:
         client = get_client()
         if not client: return None
 
-        # 1. Формуємо контекст з усіх питань
         context_data = []
         for idx, q in enumerate(questions_list):
             q_text = q.get('text')
             q_data = q.get('data')
-            
-            # Скорочуємо текст, щоб зекономити токени (хоча ліміт дозволяє, краще не смітити)
+
             content = ""
             if q.get('type') == 'text' and isinstance(q_data, dict):
                 content = str(q_data.get('answers', [])[:40]) 
@@ -61,7 +54,6 @@ def analyze_whole_survey(survey_title, questions_list):
 
         full_text = "\n".join(context_data)
 
-        # 2. Промпт з вимогою JSON
         prompt = f"""Ти аналітик. Проаналізуй результати опитування.
 
 Назва: {survey_title}
@@ -75,29 +67,25 @@ def analyze_whole_survey(survey_title, questions_list):
 Формат: {{"0": "текст висновку", "1": "текст висновку"}}
 Не додавай никаких пояснень, тільки JSON."""
 
-        # 3. Запит (змушуємо повернути JSON)
+
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
             config={'response_mime_type': 'application/json'}
         )
-        
-        # Очищуємо текст від можливих артефактів
+
         response_text = response.text.strip()
-        # Видаляємо все до першої { та після останньої }
         if '{' in response_text and '}' in response_text:
             response_text = response_text[response_text.find('{'):response_text.rfind('}')+1]
         
         result = json.loads(response_text)
-        
-        # 4. Фільтруємо результат - залишаємо тільки числові ключі (индекси питань)
+
         filtered_result = {}
         for key, value in result.items():
             try:
                 idx = int(key)
                 filtered_result[idx] = value
             except ValueError:
-                # Ігноруємо ключі, які не є числами
                 pass
         
         return filtered_result if filtered_result else None
@@ -108,19 +96,6 @@ def analyze_whole_survey(survey_title, questions_list):
 
 
 def generate_survey_description(survey_title, questions_list):
-    """
-    🎯 ГЕНЕРАЦІЯ ОПИСУ ОПИТУВАННЯ (для адмін-панелі)
-    
-    Створює короткий (2-3 речення) опис на основі назви та питань.
-    Викликається при збереженні опитування, результат зберігається в БД.
-    
-    Параметри:
-        survey_title (str): Назва опитування
-        questions_list (list): Список словників питань з полем 'text'
-    
-    Повертає:
-        str: Текст опису або None при помилці
-    """
     try:
         client = get_client()
         if not client:

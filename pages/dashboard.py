@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import textwrap
-import re # Додано імпорт
+import re
 from utils.db import get_survey_by_id, save_ai_result
 from utils.ai_helper import get_ai_analysis, analyze_whole_survey
 
@@ -92,8 +92,6 @@ st.divider()
 
 for i, q in enumerate(questions):
     raw_q_text = q.get('text', 'Питання')
-    # === ОЧИЩЕННЯ ВІД НУМЕРАЦІЇ ===
-    # Видаляє "1. ", "2)", "3 - " з початку тексту
     clean_q_text = re.sub(r'^\d+[\.\)\-\s]+\s*', '', raw_q_text)
     
     q_type = q.get('type', 'single_choice')
@@ -111,7 +109,7 @@ for i, q in enumerate(questions):
         df['Label'] = df['Відповідь'].apply(lambda x: smart_wrap(x, 30))
 
     with st.container(border=True):
-        # Використовуємо чистий текст для заголовка
+
         st.subheader(f"{i+1}. {clean_q_text}")
         
         col_viz = st.container()
@@ -217,8 +215,6 @@ for i, q in enumerate(questions):
                     if q_type == 'text': d = df['Text'].tolist(); dt = 'text'
                     elif q_type == 'matrix': d = str(q_data); dt = 'matrix'
                     else: d = dict(zip(df['Відповідь'], df['Кількість'])); dt = q_type
-                    
-                    # Використовуємо clean_q_text для AI, щоб він не бачив зайвих цифр
                     res = get_ai_analysis(clean_q_text, d, dt)
                     save_ai_result(survey.get('id'), i, res)
                     st.rerun()

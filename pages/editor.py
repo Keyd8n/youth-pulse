@@ -7,10 +7,8 @@ from utils.auth import check_password
 
 st.set_page_config(page_title="Редактор опитувань", page_icon="✏️", layout="wide")
 
-# === БЛОК БЕЗПЕКИ ===
 if not check_password():
     st.stop()
-# ===================
 
 st.markdown("""
 <style>
@@ -19,15 +17,11 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# === CALLBACK ФУНКЦІЯ ДЛЯ AI ===
-# Ця функція запуститься ПЕРЕД перезавантаженням сторінки
 def generate_desc_callback(title, questions):
-    # Викликаємо AI генерацію
     ai_desc = generate_survey_description(title, questions)
     if ai_desc:
-        # Безпечно оновлюємо стан, бо віджети ще не намальовані
         st.session_state.editor_desc = ai_desc
-        st.success("Опис згенеровано! (Вгорі)") # Повідомлення з'явиться зверху
+        st.success("Опис згенеровано! (Вгорі)")
 
 def get_all_surveys_with_id():
     db = get_db()
@@ -119,7 +113,6 @@ if filtered_surveys:
             with col3:
                 if st.button("✏️ Редагувати", key=f"edit_btn_{idx}"):
                     st.session_state.editing_survey_id = str(survey["_id"])
-                    # Очищаємо старий опис зі стейта при відкритті нового
                     if "editor_desc" in st.session_state:
                         del st.session_state.editor_desc
                     st.rerun()
@@ -140,8 +133,7 @@ if "editing_survey_id" in st.session_state:
     
     if editing_survey:
         st.subheader(f"Редагування: {editing_survey.get('title')}")
-        
-        # Ініціалізація змінної стану для опису, якщо її немає
+
         if "editor_desc" not in st.session_state:
             st.session_state.editor_desc = editing_survey.get("ai_description", "")
 
@@ -165,7 +157,6 @@ if "editing_survey_id" in st.session_state:
             desc_col1, desc_col2 = st.columns([5, 1])
             
             with desc_col1:
-                # ВАЖЛИВО: key="editor_desc" зв'язує це поле з session_state
                 st.text_area("Опис (AI-сгенерований)", 
                              key="editor_desc",
                              height=100,
@@ -174,9 +165,6 @@ if "editing_survey_id" in st.session_state:
             with desc_col2:
                 st.write("")
                 st.write("")
-                # ВИКОРИСТОВУЄМО CALLBACK (on_click)
-                # Це викличе функцію generate_desc_callback ПЕРЕД тим як сторінка перезавантажиться
-                # Тому помилки не буде
                 st.form_submit_button(
                     "🤖 Згенерувати", 
                     width='stretch',
@@ -193,7 +181,6 @@ if "editing_survey_id" in st.session_state:
                 btn_delete = st.form_submit_button("🗑️ Видалити", use_container_width=True)
             
             if btn_save:
-                # Отримуємо фінальний текст прямо зі стейту
                 final_desc = st.session_state.editor_desc
                 updated_data = {
                     "title": new_title,

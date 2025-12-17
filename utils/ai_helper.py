@@ -163,6 +163,3 @@ def generate_survey_description(survey_title, questions_list):
 
     except Exception as e:
         return None
-
-    except Exception as e:
-        return None
